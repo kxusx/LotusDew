@@ -5,7 +5,6 @@ from websocket import create_connection, WebSocketConnectionClosedException
 import json
 
 ws = websocket.create_connection("wss://api.airalgo.com/socket/websocket", sslopt={"cert_reqs": ssl.CERT_NONE})
-
 conn = {
     "topic" : "api:join",
     "event" : "phx_join",
@@ -81,12 +80,31 @@ def sell_stocks(key, currentPricesList):
         }
     ws.send(json.dumps(order))
 
+def calculateMovingAverage(pricesList, numberOfPrices, alpha=0.1): 
+    movingAverageList = {key: [] for key in tickers}
+
+    for key in tickers:
+        prices = [float(price) for price in pricesList[key]]
+        ema = [prices[0]]  # Initialize with the first price
+
+        for i in range(1, len(prices)):
+            ema.append(alpha * prices[i] + (1 - alpha) * ema[-1])
+
+        movingAverageList[key] = ema
+
+    # Calculate sell price
+    sellingPricesList = {key: [movingAverageList[key][-1]] for key in tickers}
+
+    return sellingPricesList
+
 
 def executeStrategy(pricesList, tickers):
     moneyPosition = 100000
-    # deal in the stock market until moneyPosition is 0
-
-    while moneyPosition > 0:
+    i=10
+    # deal in the stock market until moneyPosition is above 5,00,000 and i>0
+    # by keeping a stop value on moneyPosition, I prevent from excessive loss
+    while moneyPosition > 500000 and i>0:
+        i=i-1
         changeList = {key : [] for key in tickers}
         for key in pricesList:
             for i in range(1, numberOfPrices):
@@ -104,21 +122,24 @@ def executeStrategy(pricesList, tickers):
         # get 90th percentile
         combinedChangeList.sort()
         percentile90 = combinedChangeList[int(len(combinedChangeList)*0.90)]
-        # get tickers above 95th percentile
         tickerList = []
         for key in changeList:
             for i in range(len(changeList[key])):
                 if changeList[key][i] >= percentile90:
                     tickerList.append(key) 
+    
         tickerList = list(set(tickerList))
 
         # get current prices
-        currentPricesList = getCurrentPrice(tickerList)
+        currentPricesList = getCurrentPrice(tickers)
         buyingPriceList = currentPricesList
-        # append current price to pricesList & buy stock at current price
-        for key in tickerList:
+        # append current price to pricesList
+        for key in tickers:
             pricesList[key].append(currentPricesList[key][0])
+        # buy stock in tickerList at current price
+        for key in tickerList:
             moneyPosition -= currentPricesList[key][0]
+            buyingPriceList[key] = [currentPricesList[key][0]]
             buy_stocks(key, currentPricesList)
         
         import time
@@ -131,16 +152,8 @@ def executeStrategy(pricesList, tickers):
         for key in tickerList:
             pricesList[key].append(currentPricesList[key][0])
 
-        # use moving average along with current price to determine sell price
-        movingAverageList = {key : [] for key in tickerList}
-        for key in tickerList:
-            for i in range(1, numberOfPrices):
-                movingAverageList[key].append(float(pricesList[key][i]) - float(pricesList[key][i-1]))
-        # calculate sell price
-        sellingPricesList = {key : [] for key in tickerList}
-        for key in movingAverageList:
-            temp = sum(movingAverageList[key])/len(movingAverageList[key])
-            sellingPricesList[key] = [temp]
+        # use moving average to determine sell price, giving higher weightage to recent prices
+        sellingPricesList = calculateMovingAverage(pricesList, numberOfPrices)  
             
         for key in tickerList:
             if sellingPricesList[key][0] > currentPricesList[key][0]:
