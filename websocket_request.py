@@ -50,6 +50,102 @@ def create_payload(tickers):
       }
     return payload
 
+def buy_stocks(key, currentPricesList):
+    order = {
+      "topic" : "api:join", 
+      "event" : "order", 
+      "payload" : {
+          "phone_no" : "8008338216", 
+          "symbol" : key, 
+          "buy_sell" : "B", 
+          "quantity" : 1, 
+          # refer to last element in pricesList for the key
+          "price" : currentPricesList[key][-1]/100,
+          }, 
+        "ref" : ""
+        }
+    ws.send(json.dumps(order))
+
+def sell_stocks(key, currentPricesList):
+    order = {
+        "topic" : "api:join", 
+        "event" : "order", 
+        "payload" : {
+            "phone_no" : "8008338216", 
+            "symbol" : key, 
+            "buy_sell" : "S", 
+            "quantity" : 1, 
+            "price" : currentPricesList[key][0]/100,
+            }, 
+          "ref" : ""
+        }
+    ws.send(json.dumps(order))
+
+
+def executeStrategy(pricesList, tickers):
+    moneyPosition = 100000
+    # deal in the stock market until moneyPosition is 0
+
+    while moneyPosition > 0:
+        changeList = {key : [] for key in tickers}
+        for key in pricesList:
+            for i in range(1, numberOfPrices):
+                changeList[key].append(float(pricesList[key][i]) - float(pricesList[key][i-1]))
+
+        # calculate percentage change for each ticker price
+        for key in changeList:
+            for i in range(len(changeList[key])):
+                changeList[key][i] = changeList[key][i]/float(pricesList[key][i])
+        
+        combinedChangeList = []
+        for key in changeList:
+            combinedChangeList += changeList[key]
+
+        # get 90th percentile
+        combinedChangeList.sort()
+        percentile90 = combinedChangeList[int(len(combinedChangeList)*0.90)]
+        # get tickers above 95th percentile
+        tickerList = []
+        for key in changeList:
+            for i in range(len(changeList[key])):
+                if changeList[key][i] >= percentile90:
+                    tickerList.append(key) 
+        tickerList = list(set(tickerList))
+
+        # get current prices
+        currentPricesList = getCurrentPrice(tickerList)
+        buyingPriceList = currentPricesList
+        # append current price to pricesList & buy stock at current price
+        for key in tickerList:
+            pricesList[key].append(currentPricesList[key][0])
+            moneyPosition -= currentPricesList[key][0]
+            buy_stocks(key, currentPricesList)
+        
+        import time
+        # wait for 1 minute
+        time.sleep(1*60)
+
+        # get current prices
+        currentPricesList = getCurrentPrice(tickerList)
+        # append current price to pricesList
+        for key in tickerList:
+            pricesList[key].append(currentPricesList[key][0])
+
+        # use moving average along with current price to determine sell price
+        movingAverageList = {key : [] for key in tickerList}
+        for key in tickerList:
+            for i in range(1, numberOfPrices):
+                movingAverageList[key].append(float(pricesList[key][i]) - float(pricesList[key][i-1]))
+        # calculate sell price
+        sellingPricesList = {key : [] for key in tickerList}
+        for key in movingAverageList:
+            temp = sum(movingAverageList[key])/len(movingAverageList[key])
+            sellingPricesList[key] = [temp]
+            
+        for key in tickerList:
+            if sellingPricesList[key][0] > currentPricesList[key][0]:
+                moneyPosition += sellingPricesList[key][0]
+                sell_stocks(key, currentPricesList)
 
 # load tickers from file ind_nifty50list.csv
 tickers = ["ADANIENT", "ADANIPORTS", "APOLLOHOSP", "ASIANPAINT", "AXISBANK", "BAJAJ-AUTO", "BAJFINANCE", "BAJAJFINSV", "BPCL", "BHARTIARTL"]
@@ -78,135 +174,5 @@ while True:
 with open('prices1.json', 'w') as f:
     json.dump(pricesList, f)
 # write prices to file
-# with open('prices.csv', 'w') as f:
-#     for key in pricesList:
-#         # convert prices to string
-#         pricesList[key] = [str(i) for i in pricesList[key]]
-#         # f.write(key + ',' + ','.join(string(pricesList[key])) + '\n')
 
-# calculate the change in price for each ticker
-changeList = {key : [] for key in tickers}
-for key in pricesList:
-    for i in range(1, numberOfPrices):
-        changeList[key].append(float(pricesList[key][i]) - float(pricesList[key][i-1]))
-
-# calculate percentage change for each ticker
-for key in changeList:
-    for i in range(len(changeList[key])):
-        changeList[key][i] = changeList[key][i]/float(pricesList[key][i])
-# select tickers who are above 95th percentile in percentage change
-        
-combinedChangeList = []
-for key in changeList:
-    combinedChangeList += changeList[key]
-
-# get 95th percentile
-combinedChangeList.sort()
-percentile95 = combinedChangeList[int(len(combinedChangeList)*0.90)]
-# get tickers above 95th percentile
-tickerList = []
-for key in changeList:
-    for i in range(len(changeList[key])):
-      if changeList[key][i] >= percentile95:
-        tickerList.append(key) 
-# remove duplicates
-tickerList = list(set(tickerList))
-
-print(tickerList)
-
-moneyPosition = 100000
-# deal in the stock market until moneyPosition is 0
-
-while moneyPosition > 0:
-  changeList = {key : [] for key in tickers}
-  for key in pricesList:
-      for i in range(1, numberOfPrices):
-          changeList[key].append(float(pricesList[key][i]) - float(pricesList[key][i-1]))
-
-  # calculate percentage change for each ticker
-  for key in changeList:
-      for i in range(len(changeList[key])):
-          changeList[key][i] = changeList[key][i]/float(pricesList[key][i])
-  # select tickers who are above 95th percentile in percentage change
-          
-  combinedChangeList = []
-  for key in changeList:
-      combinedChangeList += changeList[key]
-
-  # get 95th percentile
-  combinedChangeList.sort()
-  percentile95 = combinedChangeList[int(len(combinedChangeList)*0.90)]
-  # get tickers above 95th percentile
-  tickerList = []
-  for key in changeList:
-      for i in range(len(changeList[key])):
-        if changeList[key][i] >= percentile95:
-          tickerList.append(key) 
-  # remove duplicates
-  tickerList = list(set(tickerList))
-  # get current prices
-  currentPricesList = getCurrentPrice(tickerList)
-  buyingPriceList = currentPricesList
-  # append current price to pricesList
-  for key in tickerList:
-      pricesList[key].append(currentPricesList[key][0])
-      moneyPosition -= currentPricesList[key][0]
-  # buy stock at current price
-  for key in tickerList:
-      order = {
-      "topic" : "api:join", 
-      "event" : "order", 
-      "payload" : {
-          "phone_no" : "8008338216", 
-          "symbol" : key, 
-          "buy_sell" : "B", 
-          "quantity" : 1, 
-          # refer to last element in pricesList for the key
-          "price" : currentPricesList[key][-1]/100,
-          }, 
-        "ref" : ""
-        }
-      ws.send(json.dumps(order))
-
-  import time
-  # wait for 1 minute
-  time.sleep(1*60)
-
-  # get current prices
-  currentPricesList = getCurrentPrice(tickerList)
-  # append current price to pricesList
-  for key in tickerList:
-      pricesList[key].append(currentPricesList[key][0])
-
-  # use moving average along with current price to determine sell price
-  movingAverageList = {key : [] for key in tickerList}
-  for key in tickerList:
-      for i in range(1, numberOfPrices):
-          movingAverageList[key].append(float(pricesList[key][i]) - float(pricesList[key][i-1]))
-  # calculate sell price
-  sellingPricesList = {key : [] for key in tickerList}
-  for key in movingAverageList:
-      temp = sum(movingAverageList[key])/len(movingAverageList[key])
-      sellingPricesList[key] = [temp]
-
-      
-  for key in tickerList:
-      if sellingPricesList[key][0] > currentPricesList[key][0]:
-        moneyPosition += sellingPricesList[key][0]
-        order = {
-        "topic" : "api:join", 
-        "event" : "order", 
-        "payload" : {
-            "phone_no" : "8008338216", 
-            "symbol" : key, 
-            "buy_sell" : "S", 
-            "quantity" : 1, 
-            "price" : currentPricesList[key][0]/100,
-            }, 
-          "ref" : ""
-          }
-        ws.send(json.dumps(order))
-
-
-
-  
+executeStrategy(pricesList, tickers)
