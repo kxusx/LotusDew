@@ -114,12 +114,36 @@ tickerList = list(set(tickerList))
 
 print(tickerList)
 
-
-
 moneyPosition = 100000
 # deal in the stock market until moneyPosition is 0
 
 while moneyPosition > 0:
+  changeList = {key : [] for key in tickers}
+  for key in pricesList:
+      for i in range(1, numberOfPrices):
+          changeList[key].append(float(pricesList[key][i]) - float(pricesList[key][i-1]))
+
+  # calculate percentage change for each ticker
+  for key in changeList:
+      for i in range(len(changeList[key])):
+          changeList[key][i] = changeList[key][i]/float(pricesList[key][i])
+  # select tickers who are above 95th percentile in percentage change
+          
+  combinedChangeList = []
+  for key in changeList:
+      combinedChangeList += changeList[key]
+
+  # get 95th percentile
+  combinedChangeList.sort()
+  percentile95 = combinedChangeList[int(len(combinedChangeList)*0.90)]
+  # get tickers above 95th percentile
+  tickerList = []
+  for key in changeList:
+      for i in range(len(changeList[key])):
+        if changeList[key][i] >= percentile95:
+          tickerList.append(key) 
+# remove duplicates
+tickerList = list(set(tickerList))
   # get current prices
   currentPricesList = getCurrentPrice(tickerList)
   buyingPriceList = currentPricesList
